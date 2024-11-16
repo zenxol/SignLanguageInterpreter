@@ -111,7 +111,7 @@ def run_exercise_detection(initial_mode):
                 ]))
 
                 if not joints_visible:
-                    feedback_text = "Ensure all joints are visible."
+                    feedback_text = "Ensure joints visible."
                 elif mode == 'pushup':
                     left_arm_angle = calculate_angle(shoulder_left, elbow_left, wrist_left)
                     right_arm_angle = calculate_angle(shoulder_right, elbow_right, wrist_right)
