@@ -8,11 +8,18 @@ import customtkinter as ctk
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# Set appearance mode and color theme
+# Set appearance mode and color theme for the GUI
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
 def calculate_angle(a, b, c):
+    """
+    Calculate the angle between three points.
+    Args:
+    a, b, c: Points represented as [x, y] coordinates
+    Returns:
+    Angle in degrees
+    """
     a = np.array(a)
     b = np.array(b)
     c = np.array(c)
@@ -23,19 +30,26 @@ def calculate_angle(a, b, c):
     return angle
 
 def landmark_check(landmark):
+    """
+    Check if a landmark is within the valid range (0 to 1).
+    """
     return 0 <= landmark[0] <= 1 and 0 <= landmark[1] <= 1
 
 def run_exercise_detection(initial_mode):
-    cap = cv2.VideoCapture(0)
-    
-    # Get screen dimensions
+    """
+    Main function to run the exercise detection.
+    """
+    cap = cv2.VideoCapture(0)  # Initialize video capture
+
+    # Set up fullscreen window
     cv2.namedWindow('Exercise Posture Detection', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('Exercise Posture Detection', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     
+    # Get screen dimensions
     screen_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     screen_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # Initialize variables
+
+    # Initialize variables for exercise tracking
     feedback_timer = 0
     exercise_state = "up"
     rep_count = 0
@@ -57,54 +71,46 @@ def run_exercise_detection(initial_mode):
             else:
                 new_width = screen_width
                 new_height = int(screen_width / aspect_ratio)
-            
             frame = cv2.resize(frame, (new_width, new_height))
-            
+
             # Create a black background image
             background = np.zeros((screen_height, screen_width, 3), dtype=np.uint8)
-            
+
             # Calculate position to center the resized frame
             y_offset = (screen_height - new_height) // 2
             x_offset = (screen_width - new_width) // 2
-            
+
             # Place the resized frame on the background
             background[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = frame
 
+            # Process the frame with MediaPipe Pose
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = pose.process(rgb_frame)
 
             if results.pose_landmarks:
-                mp_drawing.draw_landmarks(background[y_offset:y_offset+new_height, x_offset:x_offset+new_width], 
-                                          results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                # Draw pose landmarks on the frame
+                mp_drawing.draw_landmarks(
+                    background[y_offset:y_offset+new_height, x_offset:x_offset+new_width],
+                    results.pose_landmarks,
+                    mp_pose.POSE_CONNECTIONS
+                )
 
-                landmarks = results.pose_landmarks.landmark
-                
                 # Extract relevant landmarks
-                shoulder_left = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
-                                 landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
-                shoulder_right = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
-                                  landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-                elbow_left = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
-                              landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
-                elbow_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,
-                               landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
-                wrist_left = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
-                              landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
-                wrist_right = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
-                               landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
-                hip_left = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                            landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-                hip_right = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
-                             landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                knee_left = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                             landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-                knee_right = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
-                              landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-                ankle_left = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                              landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
-                ankle_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
-                               landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                landmarks = results.pose_landmarks.landmark
+                shoulder_left = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+                shoulder_right = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+                elbow_left = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+                elbow_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+                wrist_left = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+                wrist_right = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+                hip_left = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+                hip_right = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+                knee_left = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+                knee_right = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+                ankle_left = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                ankle_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
 
+                # Check if all required joints are visible
                 joints_visible = all(map(landmark_check, [
                     shoulder_left, shoulder_right, elbow_left, elbow_right,
                     wrist_left, wrist_right, hip_left, hip_right, knee_left, knee_right
@@ -113,11 +119,14 @@ def run_exercise_detection(initial_mode):
                 if not joints_visible:
                     feedback_text = "Ensure joints visible."
                 elif mode == 'pushup':
+                    # Calculate angles for push-up detection
                     left_arm_angle = calculate_angle(shoulder_left, elbow_left, wrist_left)
                     right_arm_angle = calculate_angle(shoulder_right, elbow_right, wrist_right)
                     avg_arm_angle = (left_arm_angle + right_arm_angle) / 2
 
                     current_time = time.time()
+
+                    # Detect push-up state and count reps
                     if avg_arm_angle <= 90 and exercise_state == "up":
                         exercise_state = "down"
                         rep_count += 1
@@ -131,11 +140,14 @@ def run_exercise_detection(initial_mode):
                         feedback_text = "MAINTAIN PROPER FORM"
 
                 elif mode == 'squat':
+                    # Calculate angles for squat detection
                     left_knee_angle = calculate_angle(hip_left, knee_left, ankle_left)
                     right_knee_angle = calculate_angle(hip_right, knee_right, ankle_right)
                     avg_knee_angle = (left_knee_angle + right_knee_angle) / 2
 
                     current_time = time.time()
+
+                    # Detect squat state and count reps
                     if avg_knee_angle <= 100 and exercise_state == "up":
                         exercise_state = "down"
                         rep_count += 1
@@ -150,14 +162,16 @@ def run_exercise_detection(initial_mode):
             else:
                 feedback_text = "Please ensure you're in frame."
 
-            # Display feedback and rep count
+            # Display feedback and rep count on the frame
             cv2.putText(background, f"Mode: {mode.capitalize()}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.putText(background, feedback_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             cv2.putText(background, f"Reps: {rep_count}", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.putText(background, "Press 'q' to quit, 's' to switch mode", (10, screen_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
+            # Show the frame
             cv2.imshow('Exercise Posture Detection', background)
 
+            # Handle key presses
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
@@ -172,6 +186,9 @@ def run_exercise_detection(initial_mode):
     show_exercise_selection()
 
 def switch_mode():
+    """
+    Create a GUI window for switching exercise modes.
+    """
     root = ctk.CTk()
     root.title("Switch Mode")
     root.geometry("400x300")
@@ -194,6 +211,9 @@ def switch_mode():
     root.mainloop()
 
 def show_exercise_selection():
+    """
+    Create a GUI window for selecting the initial exercise mode.
+    """
     root = ctk.CTk()
     root.title("Exercise Selection")
     root.geometry("400x300")
@@ -213,6 +233,9 @@ def show_exercise_selection():
     root.mainloop()
 
 def start_exercise(root, mode):
+    """
+    Close the GUI window and start the exercise detection.
+    """
     root.destroy()
     run_exercise_detection(mode)
 
