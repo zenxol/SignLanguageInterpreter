@@ -1,54 +1,136 @@
 import cv2
-import mediapipe as mp
 import numpy as np
-import tensorflow as tf
+import mediapipe as mp
 
-# Initialize MediaPipe Hands
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5)
+# Initialize MediaPipe Pose
+mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# Load your trained model here (assuming you have one)
-# model = tf.keras.models.load_model('path_to_your_model.h5')
+# Function to calculate angle between three points
+def calculate_angle(a, b, c):
+    a = np.array(a)  # First joint
+    b = np.array(b)  # Mid joint
+    c = np.array(c)  # End joint
+
+    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+    angle = np.abs(radians * 180.0 / np.pi)
+
+    # Normalize angle to be between 0 and 180 degrees
+    if angle > 180.0:
+        angle = 360 - angle
+
+    return angle
 
 # Initialize video capture
 cap = cv2.VideoCapture(0)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        continue
+mode = None  # Variable to store the current exercise mode
 
-    # Convert the BGR image to RGB
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+with mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5) as pose:
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            continue
 
-    # Process the frame with MediaPipe Hands
-    results = hands.process(rgb_frame)
+        # Convert the BGR image to RGB
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            # Draw hand landmarks on the frame
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+        # Process the frame with MediaPipe Pose
+        results = pose.process(rgb_frame)
 
-            # Extract hand landmarks
-            landmarks = np.array([[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark]).flatten()
+        if results.pose_landmarks:
+            # Draw pose landmarks on the frame
+            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-            # Prepare the landmarks for prediction (normalize if necessary)
-            # landmarks = landmarks.reshape(1, -1)  # Reshape for model input
+            # Get coordinates of relevant landmarks for exercise analysis (shoulders, elbows, knees)
+            landmarks = results.pose_landmarks.landmark
+            
+            shoulder_left = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                             landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+            shoulder_right = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
+                              landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+            elbow_left = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+            elbow_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,
+                           landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+            wrist_left = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+            wrist_right = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,
+                           landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
 
-            # Make prediction using your model
-            # prediction = model.predict(landmarks)
-            # predicted_class = np.argmax(prediction)
+            knee_left = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
+                         landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+            knee_right = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
+                          landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
 
-            # Display the predicted sign (you'll need to map class indices to sign labels)
-            # cv2.putText(frame, f"Sign: {predicted_class}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            hip_left = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                        landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+            hip_right = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
+                         landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
 
-    # Display the frame
-    cv2.imshow('Sign Language Detection', frame)
+            feedback_text = ""
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+            # Example feedback based on mode selected
+            if mode == 'pushup':
+                left_arm_angle = calculate_angle(shoulder_left, elbow_left, wrist_left)
+                right_arm_angle = calculate_angle(shoulder_right, elbow_right, wrist_right)
+
+                # Check for good push-up form: elbows should be less than 90 degrees
+                if left_arm_angle < 90 and right_arm_angle < 90:
+                    feedback_text = "Good push-up form!"
+                else:
+                    feedback_text += "Keep your elbows past 90 degrees!"
+
+            elif mode == 'squat':
+                left_knee_angle = calculate_angle(hip_left, knee_left, elbow_left)  # Using hip and elbow for reference
+                right_knee_angle = calculate_angle(hip_right, knee_right, elbow_right)
+
+                # Check if user is standing first (hips above knees)
+                if hip_left[1] > knee_left[1] and hip_right[1] > knee_right[1]:
+                    feedback_text += "Good squat form."
+                elif left_knee_angle < 100 and right_knee_angle < 100:  # Knees bent at less than or equal to 100 degrees
+                    feedback_text += "Go lower in your squat/"
+                else:
+                    feedback_text += "Good squat form"
+
+            elif mode == 'plank':
+                left_shoulder_position = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value]
+                right_shoulder_position = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value]
+                left_hip_position = landmarks[mp_pose.PoseLandmark.LEFT_HIP.value]
+                right_hip_position = landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value]
+
+                # Check if arms are straight (wrist and shoulder positions)
+                arms_straight = (left_shoulder_position.visibility > 0.5 and 
+                                 right_shoulder_position.visibility > 0.5)
+
+                # Check if back is straight by comparing shoulder and hip positions
+                back_straight_condition = (abs(left_shoulder_position.y - left_hip_position.y) < 0.15 and 
+                                           abs(right_shoulder_position.y - right_hip_position.y) < 0.15)
+
+                if arms_straight and back_straight_condition:
+                    feedback_text += "Good plank position!"
+                else:
+                    feedback_text += "Keep your arms straight and back aligned!"
+
+            else:
+                feedback_text += "Select a mode (0 for push-up, 1 for squat, 2 for plank)"
+
+            # Display feedback on the frame
+            cv2.putText(frame, feedback_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        # Show the frame with predictions and feedback
+        cv2.imshow('Exercise Posture Detection', frame)
+
+        # Check for key presses to change modes
+        key = cv2.waitKey(1)
+        if key == ord('0'):
+            mode = 'pushup'
+        elif key == ord('1'):
+            mode = 'squat'
+        elif key == ord('2'):
+            mode = 'plank'
+        elif key == ord('q'):
+            break
 
 cap.release()
 cv2.destroyAllWindows()
-cv2.waitKey(1)
