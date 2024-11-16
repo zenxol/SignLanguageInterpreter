@@ -148,7 +148,7 @@ def run_exercise_detection(initial_mode):
                             exercise_state = "up"
                         feedback_text = "MAINTAIN PROPER FORM"
             else:
-                feedback_text = "No pose detected. Please ensure you're in frame."
+                feedback_text = "Please ensure you're in frame."
 
             # Display feedback and rep count
             cv2.putText(background, f"Mode: {mode.capitalize()}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
