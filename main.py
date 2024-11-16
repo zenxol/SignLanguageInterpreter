@@ -2,62 +2,46 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import time
-import tkinter as tk
-from tkinter import ttk
+import customtkinter as ctk
 
 # Initialize MediaPipe Pose
 mp_pose = mp.solutions.pose
 mp_drawing = mp.solutions.drawing_utils
 
-# Function to calculate angle between three points
-def calculate_angle(a, b, c):
-    a = np.array(a)  # First joint
-    b = np.array(b)  # Mid joint
-    c = np.array(c)  # End joint
+# Set appearance mode and color theme
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("blue")
 
+def calculate_angle(a, b, c):
+    a = np.array(a)
+    b = np.array(b)
+    c = np.array(c)
     radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
     angle = np.abs(radians * 180.0 / np.pi)
-
-    # Normalize angle to be between 0 and 180 degrees
     if angle > 180.0:
         angle = 360 - angle
-
     return angle
 
-# Function to check if a landmark is visible
 def landmark_check(landmark):
     return 0 <= landmark[0] <= 1 and 0 <= landmark[1] <= 1
 
-# Function to start the exercise mode
-def start_exercise(mode):
-    root.destroy()  # Close the start screen
-    run_exercise_detection(mode)
-
-# Create start screen
-root = tk.Tk()
-root.title("Exercise Selection")
-root.geometry("300x200")
-
-label = ttk.Label(root, text="Select exercise mode:", font=("Arial", 14))
-label.pack(pady=20)
-
-pushup_button = ttk.Button(root, text="Push-ups", command=lambda: start_exercise('pushup'))
-pushup_button.pack(pady=10)
-
-squat_button = ttk.Button(root, text="Squats", command=lambda: start_exercise('squat'))
-squat_button.pack(pady=10)
-
-plank_button = ttk.Button(root, text="Plank", command=lambda: start_exercise('plank'))
-plank_button.pack(pady=10)
-
-# Function to run the exercise detection
-def run_exercise_detection(mode):
+def run_exercise_detection(initial_mode):
     cap = cv2.VideoCapture(0)
     
+    # Get screen dimensions
+    cv2.namedWindow('Exercise Posture Detection', cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty('Exercise Posture Detection', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    
+    screen_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    screen_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
     # Initialize variables
+    feedback_timer = 0
+    exercise_state = "up"
     rep_count = 0
-    exercise_in_progress = False
-    plank_start_time = None
+    last_rep_time = 0
+    mode = initial_mode
+    feedback_text = "Starting exercise detection..."
 
     with mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5) as pose:
         while cap.isOpened():
@@ -65,19 +49,37 @@ def run_exercise_detection(mode):
             if not ret:
                 continue
 
-            # Convert the BGR image to RGB
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Resize frame to fit screen while maintaining aspect ratio
+            aspect_ratio = frame.shape[1] / frame.shape[0]
+            if screen_width / screen_height > aspect_ratio:
+                new_width = int(screen_height * aspect_ratio)
+                new_height = screen_height
+            else:
+                new_width = screen_width
+                new_height = int(screen_width / aspect_ratio)
+            
+            frame = cv2.resize(frame, (new_width, new_height))
+            
+            # Create a black background image
+            background = np.zeros((screen_height, screen_width, 3), dtype=np.uint8)
+            
+            # Calculate position to center the resized frame
+            y_offset = (screen_height - new_height) // 2
+            x_offset = (screen_width - new_width) // 2
+            
+            # Place the resized frame on the background
+            background[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = frame
 
-            # Process the frame with MediaPipe Pose
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = pose.process(rgb_frame)
 
             if results.pose_landmarks:
-                # Draw pose landmarks on the frame
-                mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                mp_drawing.draw_landmarks(background[y_offset:y_offset+new_height, x_offset:x_offset+new_width], 
+                                          results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-                # Get coordinates of relevant landmarks for exercise analysis
                 landmarks = results.pose_landmarks.landmark
                 
+                # Extract relevant landmarks
                 shoulder_left = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,
                                  landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
                 shoulder_right = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
@@ -98,55 +100,129 @@ def run_exercise_detection(mode):
                              landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
                 knee_right = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
                               landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+                ankle_left = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
+                              landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+                ankle_right = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
+                               landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
 
-                feedback_text = ""
-
-                # Check if all relevant joints are visible
                 joints_visible = all(map(landmark_check, [
                     shoulder_left, shoulder_right, elbow_left, elbow_right,
                     wrist_left, wrist_right, hip_left, hip_right, knee_left, knee_right
                 ]))
 
-                if mode == 'pushup':
-                    if not joints_visible:
-                        feedback_text += "Ensure all joints are visible for push-ups."
-                    else:
-                        left_arm_angle = calculate_angle(shoulder_left, elbow_left, wrist_left)
-                        right_arm_angle = calculate_angle(shoulder_right, elbow_right, wrist_right)
+                if not joints_visible:
+                    feedback_text = "Ensure all joints are visible."
+                elif mode == 'pushup':
+                    left_arm_angle = calculate_angle(shoulder_left, elbow_left, wrist_left)
+                    right_arm_angle = calculate_angle(shoulder_right, elbow_right, wrist_right)
+                    avg_arm_angle = (left_arm_angle + right_arm_angle) / 2
 
-                        if left_arm_angle <= 90 and right_arm_angle <= 90:
-                            feedback_text += "Good push-up form!"
-                            if not exercise_in_progress:  
-                                exercise_in_progress = True  
-                        else:
-                            if exercise_in_progress:  
-                                rep_count += 1  
-                                feedback_text += "Push-up complete!"
-                            exercise_in_progress = False 
-                            feedback_text += "Lower your body until elbows are at 90 degrees."
+                    current_time = time.time()
+                    if avg_arm_angle <= 90 and exercise_state == "up":
+                        exercise_state = "down"
+                        rep_count += 1
+                        feedback_text = "PUSH-UP COMPLETE, GOOD FORM!"
+                        feedback_timer = current_time + 0.5
+                    elif current_time <= feedback_timer:
+                        feedback_text = "PUSH-UP COMPLETE, GOOD FORM!"
+                    else:
+                        if avg_arm_angle >= 160:
+                            exercise_state = "up"
+                        feedback_text = "MAINTAIN PROPER FORM"
 
                 elif mode == 'squat':
-                    # Implement squat detection logic here
-                    pass
+                    left_knee_angle = calculate_angle(hip_left, knee_left, ankle_left)
+                    right_knee_angle = calculate_angle(hip_right, knee_right, ankle_right)
+                    avg_knee_angle = (left_knee_angle + right_knee_angle) / 2
 
-                elif mode == 'plank':
-                    # Implement plank detection logic here
-                    pass
+                    current_time = time.time()
+                    if avg_knee_angle <= 100 and exercise_state == "up":
+                        exercise_state = "down"
+                        rep_count += 1
+                        feedback_text = "SQUAT COMPLETE, GOOD FORM!"
+                        feedback_timer = current_time + 0.5
+                    elif current_time <= feedback_timer:
+                        feedback_text = "SQUAT COMPLETE, GOOD FORM!"
+                    else:
+                        if avg_knee_angle >= 160:
+                            exercise_state = "up"
+                        feedback_text = "MAINTAIN PROPER FORM"
+            else:
+                feedback_text = "No pose detected. Please ensure you're in frame."
 
-                # Display feedback and rep count on the frame
-                cv2.putText(frame, feedback_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                if mode != 'plank':
-                    cv2.putText(frame, f"Reps: {rep_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            # Display feedback and rep count
+            cv2.putText(background, f"Mode: {mode.capitalize()}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(background, feedback_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(background, f"Reps: {rep_count}", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(background, "Press 'q' to quit, 's' to switch mode", (10, screen_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-            # Show the frame with predictions and feedback
-            cv2.imshow('Exercise Posture Detection', frame)
+            cv2.imshow('Exercise Posture Detection', background)
 
-            # Check for key press to exit
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
                 break
+            elif key == ord('s'):
+                cap.release()
+                cv2.destroyAllWindows()
+                switch_mode()
+                return
 
-        cap.release()
-        cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
+    show_exercise_selection()
 
-# Start the Tkinter event loop
-root.mainloop()
+def switch_mode():
+    root = ctk.CTk()
+    root.title("Switch Mode")
+    root.geometry("400x300")
+
+    frame = ctk.CTkFrame(master=root)
+    frame.pack(pady=20, padx=60, fill="both", expand=True)
+
+    label = ctk.CTkLabel(master=frame, text="Select new mode:", font=("Roboto", 24))
+    label.pack(pady=12, padx=10)
+
+    pushup_button = ctk.CTkButton(master=frame, text="Push-ups", command=lambda: start_exercise(root, 'pushup'))
+    pushup_button.pack(pady=12, padx=10)
+
+    squat_button = ctk.CTkButton(master=frame, text="Squats", command=lambda: start_exercise(root, 'squat'))
+    squat_button.pack(pady=12, padx=10)
+
+    exit_button = ctk.CTkButton(master=frame, text="Exit", command=root.destroy)
+    exit_button.pack(pady=12, padx=10)
+
+    root.mainloop()
+
+def show_exercise_selection():
+    root = ctk.CTk()
+    root.title("Exercise Selection")
+    root.geometry("400x300")
+
+    frame = ctk.CTkFrame(master=root)
+    frame.pack(pady=20, padx=60, fill="both", expand=True)
+
+    label = ctk.CTkLabel(master=frame, text="Select exercise mode:", font=("Roboto", 24))
+    label.pack(pady=12, padx=10)
+
+    pushup_button = ctk.CTkButton(master=frame, text="Push-ups", command=lambda: start_exercise(root, 'pushup'))
+    pushup_button.pack(pady=12, padx=10)
+
+    squat_button = ctk.CTkButton(master=frame, text="Squats", command=lambda: start_exercise(root, 'squat'))
+    squat_button.pack(pady=12, padx=10)
+
+    root.mainloop()
+
+def start_exercise(root, mode):
+    root.destroy()
+    run_exercise_detection(mode)
+
+if __name__ == "__main__":
+    try:
+        show_exercise_selection()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Ensure all Tkinter windows are closed
+        for widget in ctk.CTk().winfo_children():
+            if isinstance(widget, ctk.CTk):
+                widget.destroy()
